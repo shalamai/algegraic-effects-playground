@@ -1,0 +1,93 @@
+structural ability Stream e where
+  emit : e ->{Stream e} ()
+
+
+Stream.range : Nat -> Nat ->{Stream Nat} ()
+Stream.range n m =
+  if n >= m then ()
+  else
+    emit n
+    Stream.range (n + 1) m
+
+
+Stream.toList : '{Stream a} () -> [a]
+Stream.toList stream =
+  h : [a] -> Request {Stream a} () -> [a]
+  h acc = cases
+    {Stream.emit e -> resume} ->
+      handle !resume with h (acc ++ [e])
+    {u} -> acc
+  handle !stream with h []
+
+> Stream.toList '(Stream.range 0 10)
+
+
+Stream.foldLeft : (b -> a -> b) -> b -> '{Stream a} () -> b
+Stream.foldLeft f zero stream = 
+  h : b -> Request {Stream a} () -> b
+  h acc = cases
+    {Stream.emit e -> resume} -> 
+      handle !resume with h (f acc e)
+    {_} -> acc
+  handle !stream with h zero
+
+
+Stream.sum : '{Stream Nat} () -> Nat
+Stream.sum = Stream.foldLeft (+) 0
+
+
+> Stream.sum '(Stream.range 0 10)
+
+
+Stream.map : (a ->{} b) ->{} '{Stream a} () ->{} '{Stream b} ()
+Stream.map f stream = 
+  h : Request {Stream a} () -> {Stream b} ()
+  h = cases
+    {Stream.emit e -> resume} -> 
+      emit (f e)
+      handle !resume with h
+    {u} -> u
+  '(handle !stream with h)
+
+> Stream.toList (Stream.map (x -> x + 10) '(Stream.range 0 10))
+
+
+Stream.filter : (a -> Boolean) -> '{Stream a} () -> '{Stream a} ()
+Stream.filter p stream = 
+  h : Request {Stream a} () -> {Stream a} ()
+  h = cases
+    {Stream.emit e -> resume} ->
+      if p e then emit e else ()
+      handle !resume with h
+    {u} -> u
+  '(handle !stream with h)
+
+> Stream.toList (Stream.filter (x -> x < 5) '(Stream.range 0 10))
+
+
+Stream.take : Nat -> '{Stream a} () -> '{Stream a} ()
+Stream.take limit stream =
+  h : Nat -> Request {Stream a} () -> {Stream a} ()
+  h n = cases
+    {Stream.emit e -> resume} ->
+      if n < limit then
+        emit e
+        handle !resume with (h (n + 1))
+      else ()
+    {u} -> u
+  '(handle !stream with h 0)
+
+> Stream.toList (Stream.take 3 '(Stream.range 0 10))
+
+
+Stream.terminated : '{Stream a} () -> '{Stream (Optional a)} ()
+Stream.terminated stream = 
+  h : Request {Stream a} () -> {Stream (Optional a)} ()
+  h = cases
+    {Stream.emit e -> resume} -> 
+      emit (Some e)
+      handle !resume with h
+    {u} -> emit None
+  '(handle !stream with h)
+
+> Stream.toList (Stream.terminated '(Stream.range 0 10))
